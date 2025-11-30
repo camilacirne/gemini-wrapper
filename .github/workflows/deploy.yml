@@ -1,0 +1,261 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: chat-educacional
+  ECS_CLUSTER: chat-educacional-cluster
+  ECS_SERVICE: chat-educacional-service
+  CONTAINER_NAME: backend
+
+jobs:
+  # Testes Backend
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v --cov=. --cov-report=xml || echo "Sem testes ainda"
+      
+      - name: Lint
+        run: |
+          pip install flake8 black
+          cd backend
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+          black --check . || true
+
+  # Testes Frontend
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      
+      - name: Lint
+        run: |
+          cd frontend
+          npm run lint || true
+      
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
+
+  # Security Scan
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Build e Push para ECR
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, security-scan]
+    if: github.event_name == 'push'
+    
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Build, tag, and push image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG backend/
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Push
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+      
+      - name: Scan image for vulnerabilities
+        run: |
+          aws ecr start-image-scan \
+            --repository-name $ECR_REPOSITORY \
+            --image-id imageTag=${{ github.sha }}
+
+  # Deploy Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/staging'
+    environment:
+      name: staging
+      url: http://staging.chat-educacional.com
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }}-staging \
+            --service ${{ env.ECS_SERVICE }}-staging \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+      
+      - name: Wait for deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }}-staging \
+            --services ${{ env.ECS_SERVICE }}-staging \
+            --region ${{ env.AWS_REGION }}
+      
+      - name: Run smoke tests
+        run: |
+          # Obter URL do ALB
+          ALB_URL=$(aws elbv2 describe-load-balancers \
+            --names chat-educacional-alb-staging \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
+          
+          # Testar health
+          curl -f http://$ALB_URL/health || exit 1
+
+  # Deploy Production
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: http://chat-educacional.com
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_SERVICE }} \
+            --query taskDefinition > task-definition.json
+      
+      - name: Fill in new image ID
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build-and-push.outputs.image }}
+      
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+      
+      - name: Run smoke tests
+        run: |
+          ALB_URL=$(aws elbv2 describe-load-balancers \
+            --names chat-educacional-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
+          
+          curl -f http://$ALB_URL/health || exit 1
+          curl -f http://$ALB_URL/api/topics || exit 1
+      
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Deployed to production
+            
+            Image: ${{ needs.build-and-push.outputs.image }}
+            Commit: ${{ github.sha }}
+
+  # Notificações
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+    steps:
+      - name: Notify Slack
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Deploy failed!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

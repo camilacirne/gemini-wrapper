@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+README.md
+docs/
+LICENSE
+
+# Backend
+backend/.env
+backend/__pycache__/
+backend/*.pyc
+backend/venv/
+backend/.pytest_cache/
+backend/tests/
+
+# Frontend
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/dist/
+frontend/coverage/
+
+# Terraform
+infrastructure/
+
+# Docker
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Logs
+*.log
+logs/
