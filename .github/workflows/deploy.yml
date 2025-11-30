@@ -5,6 +5,10 @@ on:
     branches: [main, staging]
   pull_request:
     branches: [main]
+  
+permissions:
+  contents: read
+  security-events: write
 
 env:
   AWS_REGION: us-east-1
@@ -88,10 +92,10 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
       
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v2
+      - name: Upload SARIF to Security Dashboard
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
 
   # Build e Push para ECR
   build-and-push:
