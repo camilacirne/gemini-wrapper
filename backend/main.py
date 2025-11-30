@@ -1,11 +1,6 @@
-"""
-Chat Educacional com Gemini AI
-Backend API desenvolvido com FastAPI
-"""
-
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import google.generativeai as genai
@@ -13,23 +8,59 @@ import os
 from datetime import datetime
 import logging
 from prometheus_client import Counter, Histogram, generate_latest
-from fastapi.responses import Response
 import time
+from dotenv import load_dotenv 
+import google.generativeai as genai
 
-# Configurar logging
+# ===================== LOGGING =====================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Métricas Prometheus
-REQUEST_COUNT = Counter('http_requests_total', 'Total de requisições HTTP', ['method', 'endpoint', 'status'])
-REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'Latência das requisições HTTP', ['endpoint'])
-CHAT_MESSAGES = Counter('chat_messages_total', 'Total de mensagens do chat', ['topic'])
-GEMINI_ERRORS = Counter('gemini_errors_total', 'Total de erros da API Gemini')
+# ===================== ENV / GEMINI =====================
+load_dotenv()
 
-# Configurar FastAPI
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# 👇 se não tiver MODEL_NAME, cai em "gemini-1.5-flash"
+MODEL_NAME = os.getenv("MODEL_NAME", "gemini-1.5-flash")
+
+if not GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY não configurada!")
+    raise ValueError("GEMINI_API_KEY não encontrada nas variáveis de ambiente")
+
+logger.info(f"Usando modelo Gemini: {MODEL_NAME}")
+
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel(MODEL_NAME)
+
+# ===================== MÉTRICAS PROMETHEUS =====================
+REQUEST_COUNT = Counter(
+    "chat_http_requests_total",
+    "Total de requisições HTTP da API de chat",
+    ["method", "endpoint", "status"]
+)
+
+REQUEST_LATENCY = Histogram(
+    "chat_http_request_duration_seconds",
+    "Latência das requisições HTTP da API de chat",
+    ["endpoint"]
+)
+
+CHAT_MESSAGES = Counter(
+    "chat_messages_total",
+    "Total de mensagens do chat",
+    ["topic"]
+)
+
+GEMINI_ERRORS = Counter(
+    "chat_gemini_errors_total",
+    "Total de erros da API Gemini"
+)
+
+# ===================== FASTAPI APP =====================
 app = FastAPI(
     title="Chat Educacional Gemini API",
     description="API de chat educacional em Cloud Computing usando Google Gemini",
@@ -47,16 +78,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configurar Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY não configurada!")
-    raise ValueError("GEMINI_API_KEY não encontrada nas variáveis de ambiente")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
-
-# Models
+# ===================== MODELS =====================
 class QuestionRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000, description="Pergunta do estudante")
     topic: Optional[str] = Field(None, description="Tópico da pergunta")
@@ -94,7 +116,7 @@ class ErrorResponse(BaseModel):
     detail: str
     timestamp: datetime
 
-# Tópicos disponíveis
+# ===================== TÓPICOS =====================
 TOPICS = [
     Topic(
         id="docker",
@@ -146,7 +168,7 @@ TOPICS = [
     ),
 ]
 
-# Middleware para métricas
+# ===================== MIDDLEWARE DE MÉTRICAS =====================
 @app.middleware("http")
 async def metrics_middleware(request, call_next):
     start_time = time.time()
@@ -162,6 +184,8 @@ async def metrics_middleware(request, call_next):
     REQUEST_LATENCY.labels(endpoint=request.url.path).observe(duration)
     
     return response
+
+# ===================== ENDPOINTS =====================
 
 # Health Check
 @app.get(
@@ -201,8 +225,6 @@ async def get_topics():
     """
     logger.info("Listando tópicos disponíveis")
     return TOPICS
-
-# Fazer pergunta
 @app.post(
     "/api/ask",
     response_model=AnswerResponse,
@@ -217,27 +239,109 @@ async def get_topics():
 async def ask_question(request: QuestionRequest):
     """
     Processa uma pergunta do estudante e retorna resposta do Gemini AI
-    
-    - **question**: Pergunta do estudante (obrigatório)
-    - **topic**: Tópico relacionado (opcional)
-    - **conversation_id**: ID para manter contexto da conversa (opcional)
     """
     try:
-        # Log da pergunta
-        logger.info(f"Nova pergunta recebida - Tópico: {request.topic}, Tamanho: {len(request.question)}")
+        logger.info(f"Nova pergunta recebida: {request.question}")
+
+        topic_label = request.topic or "geral"
+        CHAT_MESSAGES.labels(topic=topic_label).inc()
+
+        prompt = create_educational_prompt(request.question, request.topic)
+
+        logger.info("Chamando API Gemini...")
+
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_output_tokens": 4096,
+                "response_mime_type": "text/plain",
+            },
+        )
+
+        # ---- Extração robusta do texto ----
+        if not response.candidates:
+            logger.error("Nenhum candidato retornado pelo modelo")
+            GEMINI_ERRORS.inc()
+            raise HTTPException(
+                status_code=500,
+                detail="Modelo não retornou nenhuma resposta"
+            )
+
+        candidate = response.candidates[0]
+        finish_reason = getattr(candidate, "finish_reason", None)
+        logger.info(f"finish_reason do modelo: {finish_reason}")
+
+        parts = getattr(candidate, "content", None)
+        text = ""
+
+        if parts and getattr(parts, "parts", None):
+            text = "".join(
+                getattr(p, "text", "") or "" 
+                for p in parts.parts
+            )
+
+        if not text:
+            # Aqui é exatamente o caso do erro que você viu
+            logger.error(
+                f"Modelo não retornou texto. finish_reason={finish_reason}"
+            )
+            GEMINI_ERRORS.inc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Modelo não retornou texto (finish_reason={finish_reason})"
+            )
+
+        answer = text
+        logger.info(f"Resposta gerada com sucesso - Tamanho: {len(answer)}")
+
+        conversation_id = request.conversation_id or f"conv_{int(time.time())}"
+
+        return AnswerResponse(
+            answer=answer,
+            topic=request.topic,
+            timestamp=datetime.now(),
+            conversation_id=conversation_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao processar pergunta: {str(e)}")
+        GEMINI_ERRORS.inc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao processar pergunta: {str(e)}"
+        )
+
+
+async def ask_question(request: QuestionRequest):
+    """
+    Processa uma pergunta do estudante e retorna resposta do Gemini AI
+    """
+    try:
+        logger.info(
+            f"Nova pergunta recebida - Tópico: {request.topic}, "
+            f"Tamanho: {len(request.question)}"
+        )
         
-        # Incrementar métrica
         topic_label = request.topic or "geral"
         CHAT_MESSAGES.labels(topic=topic_label).inc()
         
-        # Criar prompt contextualizado
         prompt = create_educational_prompt(request.question, request.topic)
         
-        # Chamar Gemini
         logger.info("Chamando API Gemini...")
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_output_tokens": 1024,
+            },
+        )
         
-        if not response.text:
+        if not getattr(response, "text", None):
             logger.error("Gemini retornou resposta vazia")
             GEMINI_ERRORS.inc()
             raise HTTPException(
@@ -248,7 +352,6 @@ async def ask_question(request: QuestionRequest):
         answer = response.text
         logger.info(f"Resposta gerada com sucesso - Tamanho: {len(answer)}")
         
-        # Gerar conversation_id se não fornecido
         conversation_id = request.conversation_id or f"conv_{int(time.time())}"
         
         return AnswerResponse(
@@ -258,6 +361,8 @@ async def ask_question(request: QuestionRequest):
             conversation_id=conversation_id
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao processar pergunta: {str(e)}")
         GEMINI_ERRORS.inc()
@@ -279,7 +384,6 @@ DIRETRIZES:
 4. Se a pergunta for muito ampla, foque nos pontos principais
 5. Inclua boas práticas quando relevante
 6. Use formatação markdown para melhor legibilidade
-
 """
     
     if topic:
@@ -300,7 +404,7 @@ async def root():
         "version": "1.0.0"
     }
 
-# Exception handlers
+# ===================== EXCEPTION HANDLERS =====================
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
@@ -323,11 +427,12 @@ async def general_exception_handler(request, exc):
         }
     )
 
+# ===================== ENTRYPOINT =====================
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(
-        "main:app",
+        app,
         host="0.0.0.0",
         port=port,
         reload=False,
