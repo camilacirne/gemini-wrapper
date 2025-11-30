@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Node.js
+      # Node 18 + cache usando o package-lock da pasta correta
         uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -58,18 +59,18 @@ jobs:
           cache-dependency-path: frontend/gemini-wrapper/package-lock.json
       
       - name: Install dependencies
+        working-directory: frontend/gemini-wrapper
         run: |
-          cd frontend
           npm ci
       
       - name: Lint
+        working-directory: frontend/gemini-wrapper
         run: |
-          cd frontend
           npm run lint || true
       
       - name: Build
+        working-directory: frontend/gemini-wrapper
         run: |
-          cd frontend
           npm run build
 
   # Security Scan
