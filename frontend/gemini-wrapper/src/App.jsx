@@ -1,181 +1,126 @@
-import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import './App.css';
+import React from 'react'; 
+import { useState, useEffect, useRef } from 'react'
+import axios from 'axios'
+import './App.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState('');
-  const [selectedTopic, setSelectedTopic] = useState('');
-  const [topics, setTopics] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [apiStatus, setApiStatus] = useState('checking');
-  const messagesEndRef = useRef(null);
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [apiStatus, setApiStatus] = useState('checking')
+  const [selectedTopic, setSelectedTopic] = useState('')
+  const [topics, setTopics] = useState([])
+  const messagesEndRef = useRef(null)
 
   useEffect(() => {
-    checkApiHealth();
-    loadTopics();
-    
-    setMessages([{
-      type: 'assistant',
-      content: '👋 Olá! Sou seu assistente de estudos em Cloud Computing. Como posso ajudá-lo hoje?',
-      timestamp: new Date()
-    }]);
-  }, []);
+    checkApiStatus()
+    loadTopics()
+  }, [])
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    scrollToBottom()
+  }, [messages])
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
-  const checkApiHealth = async () => {
+  const checkApiStatus = async () => {
     try {
-      const response = await axios.get(`${API_URL}/health`);
-      if (response.status === 200) {
-        setApiStatus('connected');
-      }
+      const response = await axios.get(`${API_URL}/health`)
+      setApiStatus(response.data.status === 'healthy' ? 'connected' : 'error')
     } catch (error) {
-      setApiStatus('error');
-      console.error('Erro ao verificar API:', error);
+      setApiStatus('error')
     }
-  };
+  }
 
   const loadTopics = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/topics`);
-      setTopics(response.data.topics || []);
+      const response = await axios.get(`${API_URL}/api/topics`)
+      setTopics(response.data.topics || [])
     } catch (error) {
-      console.error('Erro ao carregar tópicos:', error);
       setTopics([
-        'Docker e Containerização',
-        'AWS - Serviços Básicos',
-        'CI/CD e GitHub Actions',
-        'Kubernetes',
-        'Terraform e IaC',
-        'Segurança em Cloud',
-        'Monitoramento e Logs',
-        'Arquitetura de Microserviços'
-      ]);
+        { id: 'docker', name: 'Docker', description: 'Containers' },
+        { id: 'aws', name: 'AWS', description: 'Cloud' },
+        { id: 'kubernetes', name: 'Kubernetes', description: 'Orquestração' },
+        { id: 'cicd', name: 'CI/CD', description: 'Pipeline' }
+      ])
     }
-  };
+  }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!inputValue.trim()) return;
+  const sendMessage = async (e) => {
+    e.preventDefault()
+    if (!input.trim()) return
 
     const userMessage = {
-      type: 'user',
-      content: inputValue,
-      topic: selectedTopic,
-      timestamp: new Date()
-    };
+      role: 'user',
+      content: input,
+      timestamp: new Date().toISOString()
+    }
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    setIsLoading(true);
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setLoading(true)
 
     try {
       const response = await axios.post(`${API_URL}/api/ask`, {
-        question: userMessage.content,
+        question: input,
         topic: selectedTopic
-      });
+      })
 
       const assistantMessage = {
-        type: 'assistant',
+        role: 'assistant',
         content: response.data.answer,
-        topic: response.data.topic,
-        timestamp: new Date(response.data.timestamp)
-      };
+        timestamp: new Date().toISOString()
+      }
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
-      console.error('Erro:', error);
-      
       const errorMessage = {
-        type: 'assistant',
-        content: '❌ Desculpe, ocorreu um erro ao processar sua pergunta. Verifique se a API está rodando.',
-        timestamp: new Date(),
-        isError: true
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+        role: 'assistant',
+        content: 'Erro ao processar pergunta. Verifique se o backend está rodando.',
+        timestamp: new Date().toISOString()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setLoading(false)
     }
-
-    setIsLoading(false);
-  };
+  }
 
   const clearChat = () => {
-    setMessages([{
-      type: 'assistant',
-      content: '👋 Chat limpo! Como posso ajudá-lo?',
-      timestamp: new Date()
-    }]);
-    setSelectedTopic('');
-  };
-
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const exampleQuestions = [
-    { question: "O que é Docker?", topic: "Docker e Containerização" },
-    { question: "Como funciona o ECS Fargate?", topic: "AWS - Serviços Básicos" },
-    { question: "Explique CI/CD", topic: "CI/CD e GitHub Actions" },
-    { question: "O que é Kubernetes?", topic: "Kubernetes" }
-  ];
-
-  const askExample = (question, topic) => {
-    setInputValue(question);
-    setSelectedTopic(topic);
-  };
+    setMessages([])
+    setSelectedTopic('')
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-black">
       {/* Header */}
-      <header className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xl">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center space-x-4">
-              <div className="bg-white p-3 rounded-xl shadow-lg">
-                <svg className="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z"/>
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold">Assistente de Estudos</h1>
-                <p className="text-purple-200 text-sm">Cloud Computing & DevOps</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-white bg-opacity-20 px-3 py-2 rounded-lg">
+      <header className="bg-black border-b border-purple-900/30 shadow-xl">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-white">
+              Chat Educacional - Cloud Computing
+            </h1>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
                 <div className={`w-3 h-3 rounded-full ${
-                  apiStatus === 'connected' ? 'bg-green-400' :
-                  apiStatus === 'checking' ? 'bg-yellow-400' :
-                  'bg-red-400'
-                } animate-pulse`}></div>
-                <span className="text-sm">
-                  {apiStatus === 'connected' ? 'Conectado' :
-                   apiStatus === 'checking' ? 'Verificando...' :
-                   'Offline'}
+                  apiStatus === 'connected' ? 'bg-purple-500 animate-pulse shadow-lg shadow-purple-500/50' : 
+                  apiStatus === 'error' ? 'bg-red-500' : 
+                  'bg-yellow-500'
+                }`} />
+                <span className="text-sm text-gray-300">
+                  {apiStatus === 'connected' ? 'Conectado' : 
+                   apiStatus === 'error' ? 'Offline' : 
+                   'Verificando...'}
                 </span>
               </div>
               <button
                 onClick={clearChat}
-                className="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all flex items-center space-x-2"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all text-sm font-medium shadow-lg shadow-purple-600/30"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/>
-                </svg>
-                <span className="hidden sm:inline">Limpar</span>
+                Limpar
               </button>
             </div>
           </div>
@@ -183,199 +128,147 @@ function App() {
       </header>
 
       {/* Topics */}
-      <div className="bg-white border-b shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <h3 className="font-semibold text-gray-700 mb-3 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"/>
-            </svg>
-            Tópicos Disponíveis
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setSelectedTopic('')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all transform hover:scale-105 ${
-                selectedTopic === '' 
-                  ? 'bg-purple-600 text-white shadow-lg' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              🌐 Geral
-            </button>
-            {topics.map((topic, index) => (
+      {topics.length > 0 && (
+        <div className="bg-black border-b border-purple-900/30">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex flex-wrap gap-2">
               <button
-                key={index}
-                onClick={() => setSelectedTopic(topic)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all transform hover:scale-105 ${
-                  selectedTopic === topic 
-                    ? 'bg-purple-600 text-white shadow-lg' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                onClick={() => setSelectedTopic('')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  selectedTopic === '' 
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
                 }`}
               >
-                {topic}
+                Todos
               </button>
-            ))}
+              {topics.map((topic) => (
+                <button
+                  key={topic.id}
+                  onClick={() => setSelectedTopic(topic.name)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    selectedTopic === topic.name 
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
+                  }`}
+                >
+                  {topic.name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Main Content */}
-      <div className="flex-1 container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
-          {/* Sidebar com exemplos */}
-          <div className="lg:col-span-1 space-y-4">
-            <div className="bg-white rounded-xl shadow-lg p-4">
-              <h3 className="font-semibold text-gray-700 mb-3 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
-                  <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"/>
-                </svg>
-                Perguntas Exemplo
-              </h3>
-              <div className="space-y-2">
-                {exampleQuestions.map((example, index) => (
-                  <button
-                    key={index}
-                    onClick={() => askExample(example.question, example.topic)}
-                    className="w-full text-left p-3 bg-gray-50 hover:bg-purple-50 rounded-lg transition-all text-sm border border-gray-200 hover:border-purple-300"
-                  >
-                    <div className="font-medium text-gray-800">{example.question}</div>
-                    <div className="text-xs text-gray-500 mt-1">{example.topic}</div>
-                  </button>
-                ))}
+      {/* Chat Area */}
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        <div className="bg-black rounded-2xl shadow-2xl border border-purple-900/30 overflow-hidden">
+          {/* Messages */}
+          <div className="h-[600px] overflow-y-auto p-6 space-y-6 bg-black">
+            {messages.length === 0 ? (
+              <div className="text-center text-gray-400 mt-40">
+                <p className="text-xl font-medium text-white mb-2">Olá! Como posso ajudar você hoje?</p>
+                <p className="text-sm">Faça perguntas sobre Cloud Computing, DevOps, AWS, Docker, Kubernetes...</p>
               </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-600 to-indigo-600 rounded-xl shadow-lg p-4 text-white">
-              <h3 className="font-semibold mb-2">💡 Dica</h3>
-              <p className="text-sm text-purple-100">
-                Selecione um tópico específico para respostas mais direcionadas ao seu estudo!
-              </p>
-            </div>
-          </div>
-
-          {/* Chat Area */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-xl shadow-lg h-full flex flex-col">
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 chat-container">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
-                  >
-                    <div className={`flex items-start space-x-3 max-w-3xl ${
-                      message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+            ) : (
+              messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                >
+                  <div className={`flex items-start gap-3 max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                      msg.role === 'user' 
+                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                        : 'bg-gray-800 text-purple-400 border border-purple-600/30'
                     }`}>
-                      <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                        message.type === 'user' 
-                          ? 'bg-blue-600' 
-                          : message.isError 
-                          ? 'bg-red-600' 
-                          : 'bg-purple-600'
-                      } shadow-lg`}>
-                        {message.type === 'user' ? '👤' : message.isError ? '⚠️' : '🤖'}
+                      {msg.role === 'user' ? 'Você' : 'AI'}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div
+                        className={`rounded-2xl px-5 py-3 shadow-lg ${
+                          msg.role === 'user'
+                            ? 'bg-purple-600 text-white shadow-purple-600/20'
+                            : 'bg-gray-800 text-white border border-gray-700'
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                       </div>
-                      
-                      <div className={`flex flex-col ${message.type === 'user' ? 'items-end' : 'items-start'}`}>
-                        <div className={`px-4 py-3 rounded-2xl shadow-md ${
-                          message.type === 'user' 
-                            ? 'bg-blue-600 text-white' 
-                            : message.isError
-                            ? 'bg-red-50 text-red-900 border border-red-200'
-                            : 'bg-gray-100 text-gray-900'
-                        }`}>
-                          {message.topic && message.type === 'user' && (
-                            <div className="text-xs opacity-75 mb-1 flex items-center">
-                              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
-                              </svg>
-                              {message.topic}
-                            </div>
-                          )}
-                          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-                        </div>
-                        <span className="text-xs text-gray-500 mt-1">{formatTime(message.timestamp)}</span>
-                      </div>
+                      <span className="text-xs text-gray-500 px-2">
+                        {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
-                ))}
-                
-                {isLoading && (
-                  <div className="flex justify-start animate-fade-in">
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center shadow-lg">
-                        🤖
-                      </div>
-                      <div className="bg-gray-100 px-4 py-3 rounded-2xl shadow-md">
-                        <div className="flex space-x-2">
-                          <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                          <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                        </div>
-                      </div>
+                </div>
+              ))
+            )}
+            
+            {loading && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gray-800 text-purple-400 border border-purple-600/30 flex items-center justify-center text-sm font-bold">
+                    AI
+                  </div>
+                  <div className="bg-gray-800 px-5 py-3 rounded-2xl shadow-lg border border-gray-700">
+                    <div className="flex gap-2">
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
                     </div>
                   </div>
-                )}
-                
-                <div ref={messagesEndRef} />
+                </div>
               </div>
+            )}
+            
+            <div ref={messagesEndRef} />
+          </div>
 
-              {/* Input Area */}
-              <div className="border-t p-4 bg-gray-50">
-                <form onSubmit={handleSubmit} className="flex space-x-3">
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Digite sua pergunta sobre Cloud Computing..."
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent shadow-sm"
-                    disabled={isLoading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !inputValue.trim()}
-                    className="bg-purple-600 text-white px-6 py-3 rounded-xl hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    <span>Enviar</span>
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/>
-                    </svg>
-                  </button>
-                </form>
-                
-                {selectedTopic && (
-                  <div className="mt-2 flex items-center text-sm text-gray-600 bg-purple-50 px-3 py-2 rounded-lg">
-                    <svg className="w-4 h-4 text-purple-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"/>
-                    </svg>
-                    Tópico: <span className="font-semibold ml-1">{selectedTopic}</span>
-                    <button
-                      onClick={() => setSelectedTopic('')}
-                      className="ml-2 text-purple-600 hover:text-purple-700"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
+          {/* Input */}
+          <div className="border-t border-purple-900/30 bg-black p-4">
+            <form onSubmit={sendMessage} className="flex gap-3">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Digite sua pergunta sobre Cloud Computing..."
+                className="flex-1 px-5 py-3 bg-gray-800 text-white border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent placeholder-gray-500"
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="px-8 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg shadow-purple-600/30"
+              >
+                {loading ? 'Enviando...' : 'Enviar'}
+              </button>
+            </form>
+            
+            {selectedTopic && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-gray-400 bg-gray-800 px-4 py-2 rounded-lg border border-gray-700">
+                <span>Tópico:</span>
+                <span className="font-semibold text-purple-400">{selectedTopic}</span>
+                <button
+                  onClick={() => setSelectedTopic('')}
+                  className="ml-auto text-purple-400 hover:text-purple-300 font-bold"
+                >
+                  ✕
+                </button>
               </div>
-            </div>
+            )}
           </div>
         </div>
-      </div>
+      </main>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-4">
-        <div className="container mx-auto px-4 text-center">
-          <p className="text-sm flex items-center justify-center space-x-2">
-            <span>Desenvolvido com Go, React e</span>
-            <span className="text-red-500 animate-pulse">❤️</span>
-            <span>| Powered by Google Gemini AI</span>
+      <footer className="bg-black border-t border-purple-900/30 py-6 mt-8">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <p className="text-sm text-gray-400">
+            Desenvolvido com <span className="text-purple-500">FastAPI</span>, <span className="text-purple-500">React</span> e <span className="text-purple-500">Google Gemini AI</span>
           </p>
         </div>
       </footer>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
