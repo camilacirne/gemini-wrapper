@@ -1,5 +1,5 @@
 # ==================================
-# Multi-stage Dockerfile para FastAPI
+# Multi-stage Dockerfile para FastAPI (backend)
 # ==================================
 
 FROM python:3.11-slim AS base

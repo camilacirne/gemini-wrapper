@@ -24,8 +24,7 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# 👇 se não tiver MODEL_NAME, cai em "gemini-1.5-flash"
-MODEL_NAME = os.getenv("MODEL_NAME", "gemini-1.5-flash")
+MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
 
 if not GEMINI_API_KEY:
     logger.error("GEMINI_API_KEY não configurada!")
