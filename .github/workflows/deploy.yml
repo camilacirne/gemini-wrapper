@@ -11,7 +11,7 @@ permissions:
   security-events: write
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
   ECR_REPOSITORY: chat-educacional
   ECS_CLUSTER: chat-educacional-cluster
   ECS_SERVICE: chat-educacional-service
