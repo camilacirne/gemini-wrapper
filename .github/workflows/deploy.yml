@@ -12,7 +12,7 @@ permissions:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REPOSITORY: chat-educacional
+  ECR_REPOSITORY: chat-edu
   ECS_CLUSTER: default                 # nome do cluster no ECS
   ECS_SERVICE: chat-educacional-fadb   # nome do service no ECS
   CONTAINER_NAME: backend
