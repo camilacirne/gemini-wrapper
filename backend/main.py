@@ -367,7 +367,7 @@ async def ask_question(request: QuestionRequest):
         GEMINI_ERRORS.inc()
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao processar pergunta: {str(e)}"
+            detail=f"Erro ao processar pergunta: {str(e)} "
         )
 
 def create_educational_prompt(question: str, topic: Optional[str] = None) -> str:
