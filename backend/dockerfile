@@ -33,9 +33,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ==================================
 FROM base AS runtime
 
-# Criar usuário não-root
-RUN useradd -m -u 1000 appuser
-
 WORKDIR /app
 
 # Copiar dependências instaladas
@@ -43,17 +40,17 @@ COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 
 # Copiar código da aplicação
-COPY --chown=appuser:appuser . .
+COPY . .
 
-# Mudar para usuário não-root
-USER appuser
+# ⚠️ IMPORTANTE:
+# Não usamos USER appuser — vamos rodar como root para permitir porta 80.
 
-# Expor porta
+# Liberar porta 80 (EXPOSE não abre firewall, só documentação)
 EXPOSE 80
 
-# Health check
+# Health check usado pelo ECS + ALB
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:80/health || exit 1
 
-# Comando de início
+# Comando para iniciar o servidor
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--workers", "2"]
