@@ -13,9 +13,10 @@ permissions:
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: chat-edu
-  ECS_CLUSTER: default                 # nome do cluster no ECS
-  ECS_SERVICE: chat-edu-7d77  # nome do service no ECS
+  ECS_CLUSTER: default                 
+  ECS_SERVICE: chat-edu-7d77  
   CONTAINER_NAME: backend
+  ECS_TASK_DEFINITION: default-chat-edu-7d77
 
 jobs:
   # Testes Backend
@@ -197,7 +198,7 @@ jobs:
       - name: Download task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
             --query taskDefinition > task-definition.json
       
       - name: Fill in new image ID
@@ -215,7 +216,7 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-      
+            
       - name: Run smoke tests
         run: |
           ALB_URL=$(aws elbv2 describe-load-balancers \

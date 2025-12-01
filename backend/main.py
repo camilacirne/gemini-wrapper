@@ -9,7 +9,6 @@ from datetime import datetime
 import logging
 from prometheus_client import Counter, Histogram, generate_latest
 import time
-from dotenv import load_dotenv 
 import google.generativeai as genai
 
 # ===================== LOGGING =====================
@@ -20,7 +19,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===================== ENV / GEMINI =====================
-load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -429,7 +427,7 @@ async def general_exception_handler(request, exc):
 # ===================== ENTRYPOINT =====================
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 80))
+    port = int(os.getenv("PORT", 8000))  
     uvicorn.run(
         app,
         host="0.0.0.0",
