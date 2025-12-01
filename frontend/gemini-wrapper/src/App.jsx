@@ -1,9 +1,9 @@
-import React from 'react'; 
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import './App.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Base da API: via Nginx -> backend
+const API_URL = import.meta.env.VITE_API_URL || '/api'
 
 function App() {
   const [messages, setMessages] = useState([])
@@ -29,7 +29,8 @@ function App() {
 
   const checkApiStatus = async () => {
     try {
-      const response = await axios.get(`${API_URL}/health`)
+      // ✅ Health bate em /health (sem /api)
+      const response = await axios.get('/health')
       setApiStatus(response.data.status === 'healthy' ? 'connected' : 'error')
     } catch (error) {
       setApiStatus('error')
@@ -38,9 +39,12 @@ function App() {
 
   const loadTopics = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/topics`)
-      setTopics(response.data.topics || [])
+      // ✅ Agora chama /api/topics (via Nginx -> backend)
+      const response = await axios.get(`${API_URL}/topics`)
+      // Backend retorna uma lista simples, não { topics: [...] }
+      setTopics(response.data || [])
     } catch (error) {
+      // Fallback estático se backend falhar
       setTopics([
         { id: 'docker', name: 'Docker', description: 'Containers' },
         { id: 'aws', name: 'AWS', description: 'Cloud' },
@@ -65,7 +69,8 @@ function App() {
     setLoading(true)
 
     try {
-      const response = await axios.post(`${API_URL}/api/ask`, {
+      // ✅ POST em /api/ask
+      const response = await axios.post(`${API_URL}/ask`, {
         question: input,
         topic: selectedTopic
       })
