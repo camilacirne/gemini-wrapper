@@ -14,7 +14,7 @@ env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: chat-edu
   ECS_CLUSTER: default                 # nome do cluster no ECS
-  ECS_SERVICE: default-chat-edu-7d77:1   # nome do service no ECS
+  ECS_SERVICE: chat-edu-7d77  # nome do service no ECS
   CONTAINER_NAME: backend
 
 jobs:
