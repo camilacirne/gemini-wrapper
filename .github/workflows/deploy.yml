@@ -207,7 +207,7 @@ jobs:
             --services ${{ env.ECS_SERVICE_BACKEND }} ${{ env.ECS_SERVICE_FRONTEND }} \
             --region ${{ env.AWS_REGION }}
 
-  # =========================
+   # =========================
   # Deploy Production (branch main)
   # =========================
   deploy-production:
@@ -216,11 +216,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: http://chat-educacional.com
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -228,13 +227,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       # -------- BACKEND --------
       - name: Download backend task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_TASK_DEFINITION_BACKEND }} \
-            --query taskDefinition > backend-task-definition.json
-      
+            --query 'taskDefinition' \
+            --output json > backend-task-definition-raw.json
+
+          # remove campos que não podem ser enviados no register-task-definition
+          jq 'del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .deregisteredAt,
+              .registeredBy,
+              .enableFaultInjection
+            )' backend-task-definition-raw.json > backend-task-definition.json
+
       - name: Fill in new backend image ID
         id: task-def-backend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -256,8 +274,21 @@ jobs:
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_TASK_DEFINITION_FRONTEND }} \
-            --query taskDefinition > frontend-task-definition.json
-      
+            --query 'taskDefinition' \
+            --output json > frontend-task-definition-raw.json
+
+          jq 'del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .deregisteredAt,
+              .registeredBy,
+              .enableFaultInjection
+            )' frontend-task-definition-raw.json > frontend-task-definition.json
+
       - name: Fill in new frontend image ID
         id: task-def-frontend
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -273,17 +304,17 @@ jobs:
           service: ${{ env.ECS_SERVICE_FRONTEND }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-      
+
       - name: Run smoke tests
         run: |
           ALB_URL=$(aws elbv2 describe-load-balancers \
             --names chat-educacional-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)
-          
+
           curl -f http://$ALB_URL/health || exit 1
           curl -f http://$ALB_URL/api/topics || exit 1
-      
+
       - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
@@ -293,11 +324,10 @@ jobs:
           release_name: Release v${{ github.run_number }}
           body: |
             Deployed to production
-            
+
             Backend image: ${{ needs.build-and-push.outputs.backend_image }}
             Frontend image: ${{ needs.build-and-push.outputs.frontend_image }}
             Commit: ${{ github.sha }}
-
   # =========================
   # Notificações
   # =========================
