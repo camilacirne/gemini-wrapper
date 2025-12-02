@@ -39,17 +39,32 @@ function App() {
 
   const loadTopics = async () => {
     try {
-      // ✅ Agora chama /api/topics (via Nginx -> backend)
+      // ✅ Chama /api/topics (via Nginx -> backend)
       const response = await axios.get(`${API_URL}/topics`)
-      // Backend retorna uma lista simples, não { topics: [...] }
-      setTopics(response.data || [])
+      const data = response.data
+
+      // Garante que SEMPRE vamos ter um array aqui
+      let topicsArray = []
+
+      if (Array.isArray(data)) {
+        // Backend já retorna array direto
+        topicsArray = data
+      } else if (data && Array.isArray(data.topics)) {
+        // Caso o backend um dia passe a retornar { topics: [...] }
+        topicsArray = data.topics
+      } else {
+        topicsArray = []
+      }
+
+      setTopics(topicsArray)
     } catch (error) {
+      console.error('Erro ao carregar tópicos, usando fallback estático:', error)
       // Fallback estático se backend falhar
       setTopics([
         { id: 'docker', name: 'Docker', description: 'Containers' },
         { id: 'aws', name: 'AWS', description: 'Cloud' },
         { id: 'kubernetes', name: 'Kubernetes', description: 'Orquestração' },
-        { id: 'cicd', name: 'CI/CD', description: 'Pipeline' }
+        { id: 'cicd', name: 'CI/CD', description: 'Pipeline' },
       ])
     }
   }
@@ -61,10 +76,10 @@ function App() {
     const userMessage = {
       role: 'user',
       content: input,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     }
 
-    setMessages(prev => [...prev, userMessage])
+    setMessages((prev) => [...prev, userMessage])
     setInput('')
     setLoading(true)
 
@@ -72,23 +87,25 @@ function App() {
       // ✅ POST em /api/ask
       const response = await axios.post(`${API_URL}/ask`, {
         question: input,
-        topic: selectedTopic
+        topic: selectedTopic,
       })
 
       const assistantMessage = {
         role: 'assistant',
         content: response.data.answer,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
+      console.error('Erro ao enviar pergunta:', error)
       const errorMessage = {
         role: 'assistant',
-        content: 'Erro ao processar pergunta. Verifique se o backend está rodando.',
-        timestamp: new Date().toISOString()
+        content:
+          'Erro ao processar pergunta. Verifique se o backend está rodando.',
+        timestamp: new Date().toISOString(),
       }
-      setMessages(prev => [...prev, errorMessage])
+      setMessages((prev) => [...prev, errorMessage])
     } finally {
       setLoading(false)
     }
@@ -110,15 +127,21 @@ function App() {
             </h1>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${
-                  apiStatus === 'connected' ? 'bg-purple-500 animate-pulse shadow-lg shadow-purple-500/50' : 
-                  apiStatus === 'error' ? 'bg-red-500' : 
-                  'bg-yellow-500'
-                }`} />
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    apiStatus === 'connected'
+                      ? 'bg-purple-500 animate-pulse shadow-lg shadow-purple-500/50'
+                      : apiStatus === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-yellow-500'
+                  }`}
+                />
                 <span className="text-sm text-gray-300">
-                  {apiStatus === 'connected' ? 'Conectado' : 
-                   apiStatus === 'error' ? 'Offline' : 
-                   'Verificando...'}
+                  {apiStatus === 'connected'
+                    ? 'Conectado'
+                    : apiStatus === 'error'
+                    ? 'Offline'
+                    : 'Verificando...'}
                 </span>
               </div>
               <button
@@ -133,15 +156,15 @@ function App() {
       </header>
 
       {/* Topics */}
-      {topics.length > 0 && (
+      {Array.isArray(topics) && topics.length > 0 && (
         <div className="bg-black border-b border-purple-900/30">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setSelectedTopic('')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  selectedTopic === '' 
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                  selectedTopic === ''
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
                 }`}
               >
@@ -152,8 +175,8 @@ function App() {
                   key={topic.id}
                   onClick={() => setSelectedTopic(topic.name)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    selectedTopic === topic.name 
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
+                    selectedTopic === topic.name
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
                       : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
                   }`}
                 >
@@ -172,21 +195,34 @@ function App() {
           <div className="h-[600px] overflow-y-auto p-6 space-y-6 bg-black">
             {messages.length === 0 ? (
               <div className="text-center text-gray-400 mt-40">
-                <p className="text-xl font-medium text-white mb-2">Olá! Como posso ajudar você hoje?</p>
-                <p className="text-sm">Faça perguntas sobre Cloud Computing, DevOps, AWS, Docker, Kubernetes...</p>
+                <p className="text-xl font-medium text-white mb-2">
+                  Olá! Como posso ajudar você hoje?
+                </p>
+                <p className="text-sm">
+                  Faça perguntas sobre Cloud Computing, DevOps, AWS, Docker,
+                  Kubernetes...
+                </p>
               </div>
             ) : (
               messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                  className={`flex ${
+                    msg.role === 'user' ? 'justify-end' : 'justify-start'
+                  } animate-fade-in`}
                 >
-                  <div className={`flex items-start gap-3 max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                      msg.role === 'user' 
-                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
-                        : 'bg-gray-800 text-purple-400 border border-purple-600/30'
-                    }`}>
+                  <div
+                    className={`flex items-start gap-3 max-w-[75%] ${
+                      msg.role === 'user' ? 'flex-row-reverse' : ''
+                    }`}
+                  >
+                    <div
+                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                          : 'bg-gray-800 text-purple-400 border border-purple-600/30'
+                      }`}
+                    >
                       {msg.role === 'user' ? 'Você' : 'AI'}
                     </div>
                     <div className="flex flex-col gap-1">
@@ -197,17 +233,22 @@ function App() {
                             : 'bg-gray-800 text-white border border-gray-700'
                         }`}
                       >
-                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        <p className="whitespace-pre-wrap leading-relaxed">
+                          {msg.content}
+                        </p>
                       </div>
                       <span className="text-xs text-gray-500 px-2">
-                        {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(msg.timestamp).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
                     </div>
                   </div>
                 </div>
               ))
             )}
-            
+
             {loading && (
               <div className="flex justify-start animate-fade-in">
                 <div className="flex items-center gap-3">
@@ -217,14 +258,20 @@ function App() {
                   <div className="bg-gray-800 px-5 py-3 rounded-2xl shadow-lg border border-gray-700">
                     <div className="flex gap-2">
                       <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                      <div
+                        className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"
+                        style={{ animationDelay: '0.2s' }}
+                      ></div>
+                      <div
+                        className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"
+                        style={{ animationDelay: '0.4s' }}
+                      ></div>
                     </div>
                   </div>
                 </div>
               </div>
             )}
-            
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -247,11 +294,13 @@ function App() {
                 {loading ? 'Enviando...' : 'Enviar'}
               </button>
             </form>
-            
+
             {selectedTopic && (
               <div className="mt-3 flex items-center gap-2 text-sm text-gray-400 bg-gray-800 px-4 py-2 rounded-lg border border-gray-700">
                 <span>Tópico:</span>
-                <span className="font-semibold text-purple-400">{selectedTopic}</span>
+                <span className="font-semibold text-purple-400">
+                  {selectedTopic}
+                </span>
                 <button
                   onClick={() => setSelectedTopic('')}
                   className="ml-auto text-purple-400 hover:text-purple-300 font-bold"
@@ -268,7 +317,10 @@ function App() {
       <footer className="bg-black border-t border-purple-900/30 py-6 mt-8">
         <div className="max-w-7xl mx-auto px-6 text-center">
           <p className="text-sm text-gray-400">
-            Desenvolvido com <span className="text-purple-500">FastAPI</span>, <span className="text-purple-500">React</span> e <span className="text-purple-500">Google Gemini AI</span>
+            Desenvolvido com{' '}
+            <span className="text-purple-500">FastAPI</span>,{' '}
+            <span className="text-purple-500">React</span> e{' '}
+            <span className="text-purple-500">Google Gemini AI</span>
           </p>
         </div>
       </footer>
